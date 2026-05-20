@@ -1,0 +1,8 @@
+package example:imports@1.0.0;
+
+world imports-world {
+  import env-mul: func(a: f32, b: f32) -> f32;
+  import env-add: func(a: s32, b: s32) -> s32;
+  export scale: func(x: f32, y: f32) -> f32;
+  export combine: func(x: s32, y: s32) -> s32;
+}

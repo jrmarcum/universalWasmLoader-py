@@ -1,0 +1,6 @@
+package example:bool@1.0.0;
+
+world bool-world {
+  export is-positive: func(n: s32) -> bool;
+  export is-even: func(n: s32) -> bool;
+}
