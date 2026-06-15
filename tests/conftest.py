@@ -25,6 +25,17 @@ def _add_wit(name: str, wasm_path: Path) -> Path:
     return wasm_path
 
 
+def _stage_prebuilt(name: str, tmp_dir: Path) -> Path:
+    """Copy a prebuilt .wasm + companion .wit (produced by wasmtk) into a temp
+    dir so the loader's sibling-.wit auto-detection finds them."""
+    wasm_path = tmp_dir / f"{name}.wasm"
+    wasm_path.write_bytes((FIXTURES / f"{name}.wasm").read_bytes())
+    (tmp_dir / f"{name}.wit").write_text(
+        (FIXTURES / f"{name}.wit").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    return wasm_path
+
+
 # ── math fixtures ──────────────────────────────────────────────────────────────
 
 @pytest.fixture(scope="session")
@@ -57,3 +68,10 @@ def imports_wasm_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
 def imports_wasm_with_wit(tmp_path_factory: pytest.TempPathFactory) -> Path:
     wasm = _compile_wat("imports_mod", tmp_path_factory.mktemp("imports_with_wit"))
     return _add_wit("imports_mod", wasm)
+
+
+# ── strings fixture (prebuilt .wasm from wasmtk, SPEC 3.0.0 string ABI) ─────────
+
+@pytest.fixture(scope="session")
+def strings_wasm_with_wit(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    return _stage_prebuilt("strings_50", tmp_path_factory.mktemp("strings_with_wit"))

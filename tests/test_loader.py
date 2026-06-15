@@ -57,6 +57,23 @@ async def test_bool_is_even(bool_wasm_with_wit: Path) -> None:
     assert exports["isEven"](3) is False
 
 
+# ── string ABI (SPEC 3.0.0: callee-allocated return + cabi_post) ──────────────
+
+async def test_string_greet(strings_wasm_with_wit: Path) -> None:
+    exports = await wasm_import(strings_wasm_with_wit)
+    assert exports["greet"]("World") == "Hello, World!"
+
+
+async def test_string_shout(strings_wasm_with_wit: Path) -> None:
+    exports = await wasm_import(strings_wasm_with_wit)
+    assert exports["shout"]("hi") == "hihi"
+
+
+async def test_string_len(strings_wasm_with_wit: Path) -> None:
+    exports = await wasm_import(strings_wasm_with_wit)
+    assert exports["strLen"]("hello") == 5
+
+
 # ── host import callbacks ─────────────────────────────────────────────────────
 
 async def test_host_callbacks_raw(imports_wasm_path: Path) -> None:

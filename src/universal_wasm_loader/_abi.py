@@ -9,6 +9,10 @@ def _decode_string(memory: wasmtime.Memory, store: wasmtime.Store, ptr: int, len
     return bytes(memory.read(store, ptr, ptr + length)).decode("utf-8")
 
 
+def _read_i32_le(memory: wasmtime.Memory, store: wasmtime.Store, addr: int) -> int:
+    return int.from_bytes(bytes(memory.read(store, addr, addr + 4)), "little", signed=True)
+
+
 def _encode_string(
     memory: wasmtime.Memory,
     store: wasmtime.Store,
@@ -71,6 +75,14 @@ def build_component_export_proxy(
     cabi_realloc_ref: list[wasmtime.Func | None],
 ) -> dict[str, Callable]:  # type: ignore[type-arg]
     def make_proxy(fd: dict, raw_fn: wasmtime.Func) -> Callable:  # type: ignore[type-arg]
+        # SPEC 3.0.0: a string/aggregate-returning export returns a single i32
+        # pointer to a callee-allocated [ptr, len] pair. After reading it, the
+        # host calls the paired cabi_post_<name>(retArea) export (if present) to
+        # let the callee free that memory. <name> is the camelCase export name.
+        cabi_post = raw_exports.get(f"cabi_post_{fd['camel_name']}")
+        if not isinstance(cabi_post, wasmtime.Func):
+            cabi_post = None
+
         def call(*args: Any) -> Any:
             memory = memory_ref[0]
             realloc = cabi_realloc_ref[0]
@@ -87,16 +99,26 @@ def build_component_export_proxy(
             rt = fd.get("return_type")
             if rt == "bool":
                 return bool(result)
-            if rt == "string" and isinstance(result, (list, tuple)) and len(result) >= 2:
-                if memory is not None:
-                    return _decode_string(memory, store, int(result[0]), int(result[1]))
+            if rt == "string" and memory is not None:
+                # The export returns a single i32 pointing at the 8-byte
+                # [ptr, len] return area (callee-allocated).
+                ret_area = int(result)
+                str_ptr = _read_i32_le(memory, store, ret_area)
+                str_len = _read_i32_le(memory, store, ret_area + 4)
+                decoded = _decode_string(memory, store, str_ptr, str_len)
+                if cabi_post is not None:
+                    cabi_post(store, ret_area)
+                return decoded
             return result
 
         return call
 
     proxy: dict[str, Callable] = {}  # type: ignore[type-arg]
     for func_def in wit_exports:
-        raw_fn = raw_exports.get(func_def["wasm_key"])
+        # wasmtk emits camelCase export names (e.g. WIT `str-len` -> `strLen`),
+        # matching the reference loader's lookup by camelCase tsName. Fall back
+        # to the underscore form for tolerance.
+        raw_fn = raw_exports.get(func_def["camel_name"]) or raw_exports.get(func_def["wasm_key"])
         if raw_fn is not None and isinstance(raw_fn, wasmtime.Func):
             proxy[func_def["camel_name"]] = make_proxy(func_def, raw_fn)
     return proxy

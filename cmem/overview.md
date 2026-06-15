@@ -82,50 +82,66 @@ Idiomatic Python equivalents of the reference loader's `wasmImport` / `createSin
 The WIT parser (`_wit_parser.py`) is regex-based: extracts `package`, `world`, and the
 `import` / `export` `func(...)` signatures; unknown param/return types collapse to `s32`.
 
-## SPEC conformance status — ⚠️ NEEDS ALIGNMENT TO SPEC 3.0.0
+## SPEC conformance status — ✅ ALIGNED TO SPEC 3.0.0 (2026-06-15)
 
-The cross-language `SPEC.md` is now at **v3.0.0 (2026-06-15)**, a **BREAKING** change to the
-string / aggregate **return** convention:
+The cross-language `SPEC.md` is at **v3.0.0 (2026-06-15)**, a **BREAKING** change to the
+string / aggregate **return** convention. **This port now implements the SPEC 3.0.0
+canonical callee-allocated return path.**
 
-- **NEW (SPEC 3.0.0, canonical callee-allocated):** a string/aggregate-returning export
-  returns a single **i32 pointer** to a callee-allocated `[ptr, len]` pair in linear memory.
-  The host reads the two i32 words at that pointer, decodes, **then calls the paired
-  `cabi_post_<name>(retPtr)` export** to let the callee free that memory.
-- **OLD (caller-allocated out-param):** the host allocates an 8-byte return area and passes
-  its address as a trailing arg; the callee writes `(ptr, len)` at offsets 0 / 4; no
-  `cabi_post`.
+- **SPEC 3.0.0 (implemented):** a string/aggregate-returning export returns a single **i32
+  pointer** to a callee-allocated `[ptr, len]` pair in linear memory. The host reads the two
+  little-endian i32 words at that pointer, decodes UTF-8, **then calls the paired
+  `cabi_post_<name>(retPtr)` export** (where `<name>` is the camelCase export name, e.g.
+  `greet` → `cabi_post_greet`) to let the callee free that memory; if that export is absent
+  the post-call is skipped.
+- **Superseded:** the old caller-allocated 8-byte out-param convention, and the even older
+  multi-value `(ptr, len)` tuple return this port used previously.
 
-**This port currently implements NEITHER cleanly — it uses an even older multi-value-return
-shape and must be migrated to SPEC 3.0.0.** The string-return marshalling lives in:
+The string-return marshalling lives in:
 
 > **`src/universal_wasm_loader/_abi.py`**, function **`build_component_export_proxy`** →
-> inner **`make_proxy` / `call`**, **lines ~86–93**.
+> inner **`make_proxy` / `call`**.
 
-There, `result = raw_fn(store, *wasm_args)` and the `rt == "string"` branch reads
-`result[0]` / `result[1]` from a **multi-value `(ptr, len)` tuple returned directly by the
-export** (`isinstance(result, (list, tuple)) and len(result) >= 2`). There is:
+`make_proxy` captures `cabi_post_<camel_name>` from `raw_exports` at proxy-construction time.
+The `call` closure: encodes string params unchanged (UTF-8 → `cabi_realloc(0,0,1,len)` →
+write → pass `(ptr,len)`); calls the export with ONLY those params, capturing the **single
+i32** return (`ret_area`); reads `str_ptr` / `str_len` via the new `_read_i32_le` helper at
+`ret_area` / `ret_area+4`; decodes; calls `cabi_post(...)` if present; returns the `str`.
 
-- **no caller-allocated 8-byte out-param** (so it is not even the old out-param convention),
-- **no callee-allocated single-pointer return** (SPEC 3.0.0), and
-- **no `cabi_post_<name>` call anywhere** in the codebase (verified: `cabi_post` appears
-  nowhere in `src/`).
+**Export-key lookup fix (required by this work):** `build_component_export_proxy` now resolves
+each raw export by `camel_name` (falling back to `wasm_key`), matching wasmtk's camelCase
+export names and the JS reference's lookup by `tsName`. Previously it used only the
+underscore `wasm_key`, so any multi-word export (e.g. WIT `str-len` → exported `strLen`) was
+not found in the proxy and fell through to the raw-export passthrough — which failed for a
+string-param export because the arg was never encoded to `(ptr, len)`.
 
-Because this port predates 2026-06-15, a future session must rework that `call` function to
-the SPEC 3.0.0 callee-allocated + `cabi_post` flow, and (likely) capture each export's
-`cabi_post_<name>` from the raw exports during proxy construction. String **params** already
-use `cabi_realloc` and are closer to spec, but should be re-verified against 3.0.0.
+Numerics/bool params and returns, and string **params**, are unchanged and remain spec-correct.
+
+> **Note:** there is no repo-local `SPEC.md` copy to update — the authoritative `SPEC.md`
+> lives in the JS reference submodule (`upstream/universalwasmloader-js/SPEC.md`), which is a
+> separate upstream repo and is not edited from here.
 
 ## Tests
 
 - Runner: `pytest` via `pixi run test` (`asyncio_mode = "auto"`, `pytest-asyncio`).
 - `conftest.py` compiles the fixture `.wat` files to `.wasm` for the tests.
 - `test_loader.py` covers: raw load, `version` global pinning (ok + mismatch), WIT export
-  proxy, **bool** ABI, host import callbacks (raw + WIT), `create_singleton` identity, and
-  `InstancePool` run / acquire-release.
+  proxy, **bool** ABI, **string** param + return ABI (SPEC 3.0.0), host import callbacks
+  (raw + WIT), `create_singleton` identity, and `InstancePool` run / acquire-release.
 - `test_wit_parser.py` covers the WIT parser.
-- **Gap:** there is **no string-param or string-return fixture/test** (no string `.wat`/`.wit`
-  in `tests/fixtures/`), so the string-return path described above is **untested** — another
-  reason to address it when aligning to SPEC 3.0.0.
+- **String fixture/test now exists:** `tests/fixtures/strings_50.wasm` + `strings_50.wit`
+  (prebuilt by wasmtk; staged into a temp dir by the `strings_wasm_with_wit` conftest
+  fixture via `_stage_prebuilt`, so the sibling-`.wit` is found). `test_loader.py` asserts
+  `greet("World") == "Hello, World!"`, `shout("hi") == "hihi"`, `strLen("hello") == 5`. These
+  three string conformance tests **pass**.
+- **Pre-existing harness caveat (unrelated to SPEC 3.0.0):** the `.wat`-based fixtures
+  (math / bool_mod / imports_mod) are compiled in `conftest._compile_wat` via
+  `wasmtime.Module(...).serialize()` (a cwasm blob) and reloaded by `_loader.wasm_import`
+  through `Module(engine, bytes)`; with recent wasmtime (35/45) that path misroutes the
+  cwasm bytes to `wat2wasm` and fails with "input was not valid utf-8". This is independent
+  of the ABI change (it reproduces on a clean checkout) and only affects the `.wat` fixtures
+  — the prebuilt-`.wasm` string tests are unaffected. Fixing it (use real `.wasm` bytes or
+  `Module.deserialize`, or pin the pixi-resolved wasmtime) is a separate harness task.
 
 ## Build / release flow
 
