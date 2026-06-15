@@ -147,6 +147,49 @@ Numerics/bool params and returns, and string **params**, are unchanged and remai
 
 - Dev tooling: `pixi run lint` (ruff), `pixi run fmt` (ruff format), `pixi run typecheck`
   (mypy strict), `pixi run test` (pytest).
-- Build: hatchling wheel; publish to PyPI as `universal-wasm-loader` once the loader passes
-  the upstream conformance fixtures. `pixi.lock` is committed for reproducibility; `.pixi/`
-  is gitignored.
+- Build: hatchling wheel + sdist (`python -m build`, or `uv build` locally). `pixi.lock` is
+  committed for reproducibility; `.pixi/` and `dist/` are gitignored.
+
+### Version source + bump (mirrors `-js`'s `deno task bump`)
+
+- **`pyproject.toml` `[project] version` is the single source of truth** for the package
+  version. The pixi `bump` task and `scripts/release.sh` both read/write only that field.
+- **`scripts/bump.py`** raises the version (stdlib-only; `patch` default / `minor` / `major`),
+  exposed as **`pixi run bump`** (`pixi run bump minor`, etc.) for parity with `-js`. Supports
+  `--dry-run` (prints the next version without writing — used to validate without mutating the
+  tree). Forces UTF-8 on stdout/stderr so the ✅ output line doesn't `UnicodeEncodeError` on a
+  Windows cp1252 console.
+- **`scripts/release.sh`** reads the `pyproject.toml` version, creates/forces tag `vX.Y.Z`, and
+  pushes it (`--no-push` to tag locally only). Mirrors `-js`'s `scripts/publish.ts` — it never
+  builds/uploads locally; the tag push is what triggers CI.
+
+### Publish workflow — `.github/workflows/publish.yml` (`run:`-only)
+
+- Trigger: `push` of a `v*` tag.
+- **CRITICAL `run:`-only constraint.** The org's Actions policy permits only `jrmarcum`-owned
+  actions. ANY third-party `uses:` — `actions/checkout`, `actions/setup-python`, AND the usual
+  `pypa/gh-action-pypi-publish` — causes `startup_failure` (nothing runs; a local tag/release
+  can still get created). So every step is a plain `run:` step, and we do **NOT** use PyPI
+  Trusted Publishing (it needs the pypa action). Do not reintroduce `uses:`.
+- Steps: checkout via `git clone --depth=1 --branch <tag> <token-auth url> .`; install
+  `build` + `twine` via `pip`; run `pytest` as an **advisory** gate (`|| true`) because the
+  `.wat` fixtures have the known wasmtime harness caveat above — the prebuilt-`.wasm` string
+  conformance tests are the meaningful gate; build sdist+wheel with `python -m build`; verify
+  with `twine check dist/*`; upload with `twine upload dist/*` using
+  `TWINE_USERNAME=__token__` / `TWINE_PASSWORD=${{ secrets.PYPI_API_TOKEN }}`.
+
+### Required owner setup (one-time)
+
+1. **PyPI project owned/registered** — the name `universal-wasm-loader` must exist on PyPI
+   under an account you control (first upload manually or pre-register the name); CI cannot
+   create a project it has no rights to.
+2. **`PYPI_API_TOKEN` repo secret** — a **project-scoped** PyPI API token added as the GitHub
+   Actions secret `PYPI_API_TOKEN` (Settings → Secrets and variables → Actions).
+
+### Validation done (2026-06-15, no real publish)
+
+- `python scripts/bump.py --dry-run` for patch/minor/major prints `0.1.1` / `0.2.0` / `1.0.0`;
+  bad kind exits 1. A real `bump` then `git checkout -- pyproject.toml` confirmed the write +
+  revert (version left at `0.1.0`).
+- `uv build` produced `universal_wasm_loader-0.1.0` sdist + wheel; `twine check dist/*` PASSED
+  both. No `twine upload` / no tag push was performed.

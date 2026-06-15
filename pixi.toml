@@ -10,6 +10,9 @@ test = "pytest tests/ -v"
 lint = "ruff check src/ tests/"
 fmt = "ruff format src/ tests/"
 typecheck = "mypy src/"
+# Raise the version in pyproject.toml (patch default; minor/major). Mirrors -js's
+# `deno task bump`. Then `bash scripts/release.sh` tags vX.Y.Z + pushes -> CI publishes.
+bump = "python scripts/bump.py"
 
 [dependencies]
 python = ">=3.11,<4"
