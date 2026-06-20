@@ -3,7 +3,7 @@ name = "universal-wasm-loader"
 # Mirrors pyproject.toml [project] version (the single source of truth that the
 # bump-version / release / publish scripts read & write). Kept in sync by
 # scripts/bump-version.{sh,nu}.
-version = "1.0.0"
+version = "1.0.1"
 description = "Universal WASM loader for Python"
 channels = ["conda-forge"]
 platforms = ["win-64", "linux-64", "osx-64", "osx-arm64"]
