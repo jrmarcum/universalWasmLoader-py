@@ -12,9 +12,12 @@ conformance tests. The JS repo is vendored as a git submodule at
 
 - **License:** MIT (© 2026 Jon Marcum). `LICENSE` is byte-identical to the `-c`/`-zig` ports and
   ships inside the sdist (`[tool.hatch.build.targets.sdist] include`); hatchling also auto-includes
-  it in the wheel's `.dist-info`. README License section links it.
-- **Status:** Release-ready **v1.0.0** (`Development Status :: 5 - Production/Stable`), targeting
-  PyPI — brought to parity with the `-c` and `-zig` ports on 2026-06-19.
+  it in the wheel's `.dist-info` (as PEP 639 `License-File`).
+- **Status:** **PUBLISHED on PyPI** (`Development Status :: 5 - Production/Stable`). First release
+  **1.0.0** uploaded 2026-06-19 via the OIDC Trusted-Publishing workflow; **1.0.1** uploaded
+  2026-06-19 (README trimmed to a user-facing PyPI page + clearer usage example). **Current /
+  latest published version: `1.0.1`.** Brought to parity with the `-c` and `-zig` ports on
+  2026-06-19. Live at <https://pypi.org/project/universal-wasm-loader/>.
 
 ## Language / runtime
 
@@ -26,7 +29,8 @@ conformance tests. The JS repo is vendored as a git submodule at
 - **Package/env manager:** pixi (conda-forge channel for Python; PyPI for deps). Editable
   install of the package itself plus a `dev` feature for the test/lint/type tools.
 - **Build backend:** hatchling (wheel packages `src/universal_wasm_loader`).
-- **Registry:** PyPI, package name **`universal-wasm-loader`** (current version **`1.0.0`**).
+- **Registry:** PyPI, package name **`universal-wasm-loader`** (latest published **`1.0.1`**;
+  `1.0.0` also live and immutable).
 
 ## Repository layout
 
@@ -228,21 +232,29 @@ flags/guards/idempotency). These replace the old `scripts/bump.py` + tag-only `s
      PyPI publisher requires that same `pypi` environment claim — so every publish pauses for a human
      approval and can only run from a release tag.
 
-### Validation done (2026-06-19, no real publish/push)
+### Release history & validation (2026-06-19)
 
-- **Host limitation:** no Python/pixi/twine on the build host (only the Windows Store `python`
-  stub), so `pytest` / `python -m build` could not be run here; the test/build status is the
-  2026-06-15 run recorded under "Tests" above. `nu` 0.113.1 and `gh` (unauthenticated) were
-  available.
-- **`bump-version`** (both forms) `--dry-run` for patch/minor/major/explicit prints
-  `1.0.1`/`1.1.0`/`2.0.0`/`1.2.3`; rejects a non-greater target (`0.9.0`, `1.0.0`) and bad semver;
-  leaves `pyproject.toml` unmodified under `--dry-run`.
-- **`publish`** (both forms) `--dry-run` downgrades the dirty-tree / missing-tag / missing-token
-  guards to warnings and prints the `build`/`twine check`/`twine upload` commands without running
-  them; with `--skip-tag-check --allow-dirty` and a token set, it prints a clean command list.
-- **`release`** (both forms) `--dry-run` verified on a clean tree — prints the
-  `build` / `git tag` / `git push` / `gh release create` commands without executing; with `gh`
-  unauthenticated it warns and skips the GitHub Release (tag still "pushed" in the printed plan).
-- **Local v1.0.0 state:** version set to `1.0.0`, committed, and tagged `v1.0.0` at HEAD locally.
-  Nothing pushed/published. Remaining outward steps (owner-gated): push branch + tag and create the
-  GitHub Release (`release`), then separately `publish` to PyPI.
+- **Published to PyPI via the OIDC CI workflow** (owner approved the `pypi` environment each run):
+  - **`1.0.0`** — first release. Required two CI fixes discovered live: the `workflow_dispatch`
+    `ref` input + **"Use workflow from: Tag v1.0.0"** (so the env's `v*`-tag rule passes), and the
+    **twine ≥6.1 / packaging ≥24.2** pin (older twine rejected hatchling's PEP 639 `License-File`).
+    The `v1.0.0` tag was **force-moved twice** while unpublished to carry those workflow fixes
+    (safe: nothing was on PyPI yet). Final `v1.0.0` tag commit: `38b44a5`.
+  - **`1.0.1`** — README trimmed to a **user-facing PyPI page** (removed Develop / Release-publish /
+    Required-setup / Publishing-from-CI sections; they live here in cmem) + a clearer async usage
+    example using the real fixture exports (`calculate`, `greet`/`strLen`). Bumped via
+    `bump-version.sh patch`, tagged `v1.0.1` (commit `d6b2b17`), pushed, published. This is the
+    latest version the PyPI project page renders.
+- **Both versions are immutable on PyPI** — a published version can never be re-uploaded or edited;
+  to change the rendered README you publish a new version (that's why the README cleanup became
+  `1.0.1`).
+- **Local-publish gotcha (recorded so it isn't repeated):** the local `publish.{sh,nu}` path needs a
+  `TWINE_*` **env var** — a token was once pasted directly into `publish.nu` (into the help-text
+  string, which does nothing) and scrubbed before any commit (it reached **no** commit). Lesson: the
+  OIDC CI path is preferred (no token touches the machine); for local use set
+  `$env:TWINE_PASSWORD`/`$env.TWINE_PASSWORD`, never edit the script. The pasted token was rotated.
+- **Tooling on the dev host:** no Python/pixi/twine (only the Windows Store `python` stub); `nu`
+  0.113.1 + `git` available, `gh` unauthenticated → **no GitHub Releases created** for `v1.0.0`/
+  `v1.0.1` (tags pushed, which is all the publish needs). To add Release notes later:
+  `gh auth login` then `gh release create v1.0.0` / `v1.0.1`. All script verification on this host
+  was via `--dry-run` (both `.sh` and `.nu`); the real builds/uploads ran on the GitHub runner.

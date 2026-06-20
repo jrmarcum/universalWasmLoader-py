@@ -30,4 +30,4 @@ comprehensive audit across tested AND untested paths for: (1) workarounds / temp
 
 | File | What it holds |
 | --- | --- |
-| [overview.md](overview.md) | What this loader port is (Python/wasmtime), API surface, ABI/SPEC 3.0.0 conformance, tests, and the v1.0.0 release toolchain — `bump-version`/`release`/`publish` in paired `.sh`+`.nu` forms, PyPI publish command + `TWINE_*` auth, decoupled manual-only CI (updated 2026-06-19) |
+| [overview.md](overview.md) | What this loader port is (Python/wasmtime), API surface, ABI/SPEC 3.0.0 conformance, tests, the release toolchain (`bump-version`/`release`/`publish` in paired `.sh`+`.nu`), the token-free OIDC publish workflow, and the **PyPI release history — `1.0.0` + `1.0.1` published 2026-06-19** (latest `1.0.1`) |
