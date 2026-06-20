@@ -34,9 +34,12 @@ mypy = ">=1.10.0"
 
 # Packaging toolchain — `scripts/release.{sh,nu}` and `scripts/publish.{sh,nu}`
 # run `pixi run python -m build` / `... -m twine ...` inside this env.
+# twine >=6.1 / packaging >=24.2: older twine rejects hatchling's PEP 639
+# `License-File` (Metadata-Version 2.4) field in `twine check`.
 [feature.publish.pypi-dependencies]
 build = ">=1.2.0"
-twine = ">=5.0.0"
+twine = ">=6.1.0"
+packaging = ">=24.2"
 
 [environments]
 default = { features = ["dev", "publish"], solve-group = "default" }

@@ -204,9 +204,14 @@ flags/guards/idempotency). These replace the old `scripts/bump.py` + tag-only `s
   `pypa/gh-action-pypi-publish`) causes `startup_failure`. Every step is a plain `run:` step —
   including the OIDC exchange. Do not reintroduce `uses:`.
 - Steps: checkout via `git clone --depth=1 --branch <input ref> <token-auth url> .`; `pip install
-  build twine`; run `pytest` as an **advisory** gate (`|| true`) because the `.wat` fixtures have
-  the known wasmtime harness caveat above; build with `python -m build`; `twine check`; then the
-  OIDC mint + `twine upload` step above.
+  --upgrade build "twine>=6.1.0" "packaging>=24.2"`; run `pytest` as an **advisory** gate (`|| true`)
+  because the `.wat` fixtures have the known wasmtime harness caveat above; build with `python -m
+  build`; `twine check`; then the OIDC mint + `twine upload` step above.
+- **twine/packaging pin (added 2026-06-19):** hatchling ships the LICENSE via PEP 639 `License-File`
+  (Metadata-Version 2.4); `twine < 6.1` / `packaging < 24.2` reject that field in `twine check`
+  (`InvalidDistribution: unrecognized or malformed field 'license-file'`). The `--upgrade` + floors
+  force a current twine over the runner's older preinstalled one. Same floors are in the pixi
+  `publish` feature for the local path.
 
 ### Required owner setup (one-time)
 

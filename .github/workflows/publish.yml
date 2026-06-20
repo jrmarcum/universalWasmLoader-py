@@ -53,7 +53,10 @@ jobs:
         run: |
           python3 --version
           python3 -m pip install --upgrade pip
-          python3 -m pip install build twine
+          # Force a current twine/packaging: hatchling emits PEP 639 `License-File`
+          # (Metadata-Version 2.4); twine < 6.1 / packaging < 24.2 reject that field
+          # in `twine check`. --upgrade also overrides any older preinstalled twine.
+          python3 -m pip install --upgrade build "twine>=6.1.0" "packaging>=24.2"
 
       # Advisory test gate. The .wat-based fixtures have a known wasmtime-version
       # harness caveat (cmem/overview.md "Pre-existing harness caveat"), so we do
