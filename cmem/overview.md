@@ -10,8 +10,11 @@ pairs. It is a direct port of the reference JavaScript implementation
 conformance tests. The JS repo is vendored as a git submodule at
 `upstream/universalwasmloader-js/`.
 
-- **License:** MIT (© 2026 Jon Marcum)
-- **Status:** Active development, alpha (`Development Status :: 3 - Alpha`), targeting PyPI.
+- **License:** MIT (© 2026 Jon Marcum). `LICENSE` is byte-identical to the `-c`/`-zig` ports and
+  ships inside the sdist (`[tool.hatch.build.targets.sdist] include`); hatchling also auto-includes
+  it in the wheel's `.dist-info`. README License section links it.
+- **Status:** Release-ready **v1.0.0** (`Development Status :: 5 - Production/Stable`), targeting
+  PyPI — brought to parity with the `-c` and `-zig` ports on 2026-06-19.
 
 ## Language / runtime
 
@@ -23,7 +26,7 @@ conformance tests. The JS repo is vendored as a git submodule at
 - **Package/env manager:** pixi (conda-forge channel for Python; PyPI for deps). Editable
   install of the package itself plus a `dev` feature for the test/lint/type tools.
 - **Build backend:** hatchling (wheel packages `src/universal_wasm_loader`).
-- **Registry:** PyPI, package name **`universal-wasm-loader`** (current version `0.1.0`).
+- **Registry:** PyPI, package name **`universal-wasm-loader`** (current version **`1.0.0`**).
 
 ## Repository layout
 
@@ -143,53 +146,79 @@ Numerics/bool params and returns, and string **params**, are unchanged and remai
   — the prebuilt-`.wasm` string tests are unaffected. Fixing it (use real `.wasm` bytes or
   `Module.deserialize`, or pin the pixi-resolved wasmtime) is a separate harness task.
 
-## Build / release flow
+## Build / release flow (REWORKED 2026-06-19 — parity with `-c`/`-zig`)
 
 - Dev tooling: `pixi run lint` (ruff), `pixi run fmt` (ruff format), `pixi run typecheck`
   (mypy strict), `pixi run test` (pytest).
 - Build: hatchling wheel + sdist (`python -m build`, or `uv build` locally). `pixi.lock` is
   committed for reproducibility; `.pixi/` and `dist/` are gitignored.
 
-### Version source + bump (mirrors `-js`'s `deno task bump`)
+### Single source of truth + the three-script toolchain
 
-- **`pyproject.toml` `[project] version` is the single source of truth** for the package
-  version. The pixi `bump` task and `scripts/release.sh` both read/write only that field.
-- **`scripts/bump.py`** raises the version (stdlib-only; `patch` default / `minor` / `major`),
-  exposed as **`pixi run bump`** (`pixi run bump minor`, etc.) for parity with `-js`. Supports
-  `--dry-run` (prints the next version without writing — used to validate without mutating the
-  tree). Forces UTF-8 on stdout/stderr so the ✅ output line doesn't `UnicodeEncodeError` on a
-  Windows cp1252 console.
-- **`scripts/release.sh`** reads the `pyproject.toml` version, creates/forces tag `vX.Y.Z`, and
-  pushes it (`--no-push` to tag locally only). Mirrors `-js`'s `scripts/publish.ts` — it never
-  builds/uploads locally; the tag push is what triggers CI.
+**`pyproject.toml` `[project] version` is the single source of truth** for the package version;
+`pixi.toml` mirrors it (kept in sync by `bump-version`). Three scripts key off it, each shipped in
+**two equivalent forms** — a Bash `.sh` and a cross-platform **Nushell `.nu`** (needs `nu` ≥0.113;
+runs on Windows/macOS/Linux without Git Bash). The `.nu` is a faithful port of the `.sh` (identical
+flags/guards/idempotency). These replace the old `scripts/bump.py` + tag-only `scripts/release.sh`
+(removed 2026-06-19). Tagging/releasing and PyPI publishing are **deliberately decoupled**.
 
-### Publish workflow — `.github/workflows/publish.yml` (`run:`-only)
+1. **`scripts/bump-version.{sh,nu}` `<major|minor|patch|X.Y.Z>`** — rewrites `[project] version` in
+   `pyproject.toml` (and the `pixi.toml` mirror) and commits the isolated bump. Guards: clean tree,
+   strictly-greater target, no pre-existing tag, valid semver. `--dry-run` / `--no-commit`.
+2. **`scripts/release.{sh,nu}`** — reads the version, verifies a clean tree + a fresh
+   `python -m build`, tags `v<version>`, pushes branch + tag to `origin`, and creates the matching
+   **GitHub Release** via `gh` (skippable). Idempotent (reuses a tag only if it points at HEAD;
+   skips an existing Release; degrades gracefully if `gh` is missing/unauthenticated — the tag is
+   still pushed). Does **NOT** publish to PyPI. `--dry-run` / `--no-release` / `--no-build` /
+   `--remote`.
+3. **`scripts/publish.{sh,nu}`** — the separate, deliberate PyPI step.
+   **Exact publish command:** `python -m build` then `python -m twine check dist/*` then
+   `python -m twine upload dist/*` (interpreter overridable via `$PYTHON`/`$env.PYTHON`).
+   **Auth required:** a PyPI API token in the environment — `TWINE_USERNAME=__token__` and
+   `TWINE_PASSWORD=pypi-…` (or a `[pypi]` entry in `~/.pypirc`); if absent it prints exactly that
+   and exits without uploading. Requires the `v<version>` tag to exist locally **and** on the
+   remote. **Idempotent:** GETs `https://pypi.org/pypi/universal-wasm-loader/<version>/json` and, if
+   that version already exists, reports success and uploads nothing. Prompts before the irreversible
+   upload (`--yes` to skip). `--dry-run` / `--allow-dirty` / `--skip-tag-check` / `--remote`.
 
-- Trigger: `push` of a `v*` tag.
-- **CRITICAL `run:`-only constraint.** The org's Actions policy permits only `jrmarcum`-owned
-  actions. ANY third-party `uses:` — `actions/checkout`, `actions/setup-python`, AND the usual
-  `pypa/gh-action-pypi-publish` — causes `startup_failure` (nothing runs; a local tag/release
-  can still get created). So every step is a plain `run:` step, and we do **NOT** use PyPI
-  Trusted Publishing (it needs the pypa action). Do not reintroduce `uses:`.
-- Steps: checkout via `git clone --depth=1 --branch <tag> <token-auth url> .`; install
-  `build` + `twine` via `pip`; run `pytest` as an **advisory** gate (`|| true`) because the
-  `.wat` fixtures have the known wasmtime harness caveat above — the prebuilt-`.wasm` string
-  conformance tests are the meaningful gate; build sdist+wheel with `python -m build`; verify
-  with `twine check dist/*`; upload with `twine upload dist/*` using
-  `TWINE_USERNAME=__token__` / `TWINE_PASSWORD=${{ secrets.PYPI_API_TOKEN }}`.
+### Publish workflow — `.github/workflows/publish.yml` (`run:`-only, now MANUAL)
+
+- Trigger: **`workflow_dispatch`** with a `ref` input (the release tag). Changed 2026-06-19 from
+  `push: tags: v*` so a `release` tag push no longer auto-publishes — publishing stays a single
+  deliberate step (local `publish` script, or this workflow run by hand). Avoids double-publishing.
+- **CRITICAL `run:`-only constraint (unchanged).** The org's Actions policy permits only
+  `jrmarcum`-owned actions. ANY third-party `uses:` — `actions/checkout`, `actions/setup-python`,
+  AND `pypa/gh-action-pypi-publish` — causes `startup_failure`. So every step is a plain `run:`
+  step, and we do **NOT** use PyPI Trusted Publishing (it needs the pypa action). Do not
+  reintroduce `uses:`.
+- Steps: checkout via `git clone --depth=1 --branch <input ref> <token-auth url> .`; `pip install
+  build twine`; run `pytest` as an **advisory** gate (`|| true`) because the `.wat` fixtures have
+  the known wasmtime harness caveat above; build with `python -m build`; `twine check`; upload with
+  `twine upload` using `TWINE_USERNAME=__token__` / `TWINE_PASSWORD=${{ secrets.PYPI_API_TOKEN }}`.
 
 ### Required owner setup (one-time)
 
-1. **PyPI project owned/registered** — the name `universal-wasm-loader` must exist on PyPI
-   under an account you control (first upload manually or pre-register the name); CI cannot
-   create a project it has no rights to.
-2. **`PYPI_API_TOKEN` repo secret** — a **project-scoped** PyPI API token added as the GitHub
-   Actions secret `PYPI_API_TOKEN` (Settings → Secrets and variables → Actions).
+1. **PyPI project owned/registered** — the name `universal-wasm-loader` must exist on PyPI under an
+   account you control (first upload via `publish`, or pre-register the name).
+2. **A PyPI API token** — for the local `publish` script, export `TWINE_USERNAME=__token__` /
+   `TWINE_PASSWORD=pypi-…` (project-scoped). For the manual CI workflow, add the same token as the
+   GitHub Actions secret **`PYPI_API_TOKEN`** (Settings → Secrets and variables → Actions).
 
-### Validation done (2026-06-15, no real publish)
+### Validation done (2026-06-19, no real publish/push)
 
-- `python scripts/bump.py --dry-run` for patch/minor/major prints `0.1.1` / `0.2.0` / `1.0.0`;
-  bad kind exits 1. A real `bump` then `git checkout -- pyproject.toml` confirmed the write +
-  revert (version left at `0.1.0`).
-- `uv build` produced `universal_wasm_loader-0.1.0` sdist + wheel; `twine check dist/*` PASSED
-  both. No `twine upload` / no tag push was performed.
+- **Host limitation:** no Python/pixi/twine on the build host (only the Windows Store `python`
+  stub), so `pytest` / `python -m build` could not be run here; the test/build status is the
+  2026-06-15 run recorded under "Tests" above. `nu` 0.113.1 and `gh` (unauthenticated) were
+  available.
+- **`bump-version`** (both forms) `--dry-run` for patch/minor/major/explicit prints
+  `1.0.1`/`1.1.0`/`2.0.0`/`1.2.3`; rejects a non-greater target (`0.9.0`, `1.0.0`) and bad semver;
+  leaves `pyproject.toml` unmodified under `--dry-run`.
+- **`publish`** (both forms) `--dry-run` downgrades the dirty-tree / missing-tag / missing-token
+  guards to warnings and prints the `build`/`twine check`/`twine upload` commands without running
+  them; with `--skip-tag-check --allow-dirty` and a token set, it prints a clean command list.
+- **`release`** (both forms) `--dry-run` verified on a clean tree — prints the
+  `build` / `git tag` / `git push` / `gh release create` commands without executing; with `gh`
+  unauthenticated it warns and skips the GitHub Release (tag still "pushed" in the printed plan).
+- **Local v1.0.0 state:** version set to `1.0.0`, committed, and tagged `v1.0.0` at HEAD locally.
+  Nothing pushed/published. Remaining outward steps (owner-gated): push branch + tag and create the
+  GitHub Release (`release`), then separately `publish` to PyPI.

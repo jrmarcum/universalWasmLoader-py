@@ -37,35 +37,53 @@ pixi run typecheck   # mypy src/
 
 ## Release / publish to PyPI
 
-The version lives in **`pyproject.toml`** (the single source of truth). Publishing happens
-**only in CI** — pushing a `vX.Y.Z` tag triggers `.github/workflows/publish.yml`, which builds
-the sdist + wheel and uploads them to PyPI.
+The version lives in **`pyproject.toml`** `[project] version` — the single source of truth
+(`pixi.toml` mirrors it). Three scripts key off it, each shipped in **two equivalent forms**: a
+Bash `.sh` and a cross-platform Nushell `.nu` (Nushell ≥ 0.113; runs on Windows/macOS/Linux
+without Git Bash). Use whichever your machine has — they have identical flags and behavior.
+
+**Tagging/releasing and publishing are deliberately decoupled:** `release` tags + pushes +
+creates the GitHub Release; `publish` is a separate, auth-gated, confirmation-guarded step that
+actually uploads to PyPI (irreversible). All three support `--dry-run`.
+
+```sh
+# 1) Bump the version (commits the isolated change)
+bash scripts/bump-version.sh patch     #  1.0.0 -> 1.0.1   (or minor | major | X.Y.Z)
+nu   scripts/bump-version.nu patch      #  …equivalent
+
+# 2) Tag v<version>, push branch + tag, create the GitHub Release (NO PyPI upload)
+bash scripts/release.sh                 #  --no-release / --no-build / --remote / --dry-run
+nu   scripts/release.nu
+
+# 3) Publish to PyPI — separate, deliberate, irreversible
+bash scripts/publish.sh                 #  prompts; --yes / --dry-run / --allow-dirty / --skip-tag-check
+nu   scripts/publish.nu
+```
+
+`publish` reads the version from `pyproject.toml`, requires the matching `v<version>` tag to
+exist locally **and** on the remote, refuses to run without a PyPI token, and is idempotent (if
+that version is already on PyPI it reports success and uploads nothing).
+
+### Required setup for `publish` (one-time)
+
+1. **PyPI project owned/registered.** The name `universal-wasm-loader` must exist on PyPI under
+   an account you control (do the first upload, or pre-register the name).
+2. **A PyPI API token in the environment** (project-scoped is best):
+
+   ```sh
+   export TWINE_USERNAME=__token__
+   export TWINE_PASSWORD=pypi-XXXXXXXX     # your token; or a [pypi] entry in ~/.pypirc
+   ```
+
+### Publishing from CI instead (optional)
+
+`.github/workflows/publish.yml` can also build + upload, but it is **manual-only**
+(`workflow_dispatch`) — it does **not** fire on a tag push, so it never double-publishes
+alongside `release`. Run it from the Actions tab against the release tag; it needs a repo secret
+**`PYPI_API_TOKEN`** (a project-scoped PyPI token).
 
 > **`run:`-only workflow.** This org's GitHub Actions policy permits only `jrmarcum`-owned
 > actions; any third-party `uses:` step (including `actions/checkout` and
-> `pypa/gh-action-pypi-publish`) causes a `startup_failure`. So the publish workflow uses plain
-> `run:` steps throughout: checkout via `git clone`, install `build`/`twine` via `pip`, and
-> upload via `twine` with a token (no Trusted Publishing).
-
-### Bump → tag → push
-
-```sh
-pixi run bump            # 0.1.0 -> 0.1.1   (patch, default)
-pixi run bump minor      # 0.1.0 -> 0.2.0
-pixi run bump major      # 0.1.0 -> 1.0.0
-
-git commit -am "bump version to vX.Y.Z"
-bash scripts/release.sh  # reads pyproject.toml version, tags vX.Y.Z, pushes -> CI publishes
-```
-
-`python scripts/bump.py --dry-run [part]` prints the next version without writing the file.
-
-### Required owner setup (one-time)
-
-1. **PyPI project must exist / be owned.** The project name `universal-wasm-loader` must be
-   registered on PyPI under an account you control (do the first upload manually, or register
-   the name) — CI cannot create a project it has no rights to.
-2. **`PYPI_API_TOKEN` GitHub repo secret.** Create a **project-scoped** PyPI API token
-   (PyPI → Account settings → API tokens → scope to `universal-wasm-loader`) and add it as a
-   repository secret named **`PYPI_API_TOKEN`** (Settings → Secrets and variables → Actions).
-   The workflow uses it as `TWINE_USERNAME=__token__` / `TWINE_PASSWORD=${{ secrets.PYPI_API_TOKEN }}`.
+> `pypa/gh-action-pypi-publish`) causes a `startup_failure`. The workflow therefore uses plain
+> `run:` steps throughout (git clone, `pip install build twine`, `twine upload` — no Trusted
+> Publishing).
