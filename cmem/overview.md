@@ -212,9 +212,11 @@ flags/guards/idempotency). These replace the old `scripts/bump.py` + tag-only `s
      (project-scoped API token; or a `[pypi]` entry in `~/.pypirc`).
    - *Manual CI workflow:* register a **Trusted Publisher** on PyPI (no stored token) — a *pending
      publisher* before the project's first upload — matching Owner `jrmarcum`, Repository
-     `universalWasmLoader-py`, Workflow `publish.yml`, Environment *(blank)*. Optional hardening:
-     create a GitHub Environment (e.g. `pypi`) with required reviewers, set `environment: pypi` on
-     the job, and put `pypi` in the publisher's Environment field.
+     `universalWasmLoader-py`, Workflow `publish.yml`, Environment **`pypi`**.
+     **Hardening applied (2026-06-19):** the job runs in a protected GitHub Environment `pypi`
+     (`environment: pypi`) with **required reviewers** + a **`v*`-tag-only** deployment rule, and the
+     PyPI publisher requires that same `pypi` environment claim — so every publish pauses for a human
+     approval and can only run from a release tag.
 
 ### Validation done (2026-06-19, no real publish/push)
 

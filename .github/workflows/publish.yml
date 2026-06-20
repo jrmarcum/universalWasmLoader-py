@@ -29,6 +29,10 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # Gate every publish on the protected `pypi` environment (required reviewers +
+    # `v*`-tag-only deployment rule). The OIDC token then carries the `pypi`
+    # environment claim, which the PyPI Trusted Publisher is configured to require.
+    environment: pypi
     permissions:
       id-token: write   # mint the OIDC token for PyPI Trusted Publishing
       contents: read    # clone the repo at the release tag
