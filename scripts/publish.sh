@@ -107,5 +107,9 @@ run "$PY" -m build
 run "$PY" -m twine check dist/*
 run "$PY" -m twine upload dist/*
 
-echo "Done: published $PKG $VERSION to PyPI."
-echo "Verify at https://pypi.org/project/$PKG/$VERSION/"
+if [ "$DRY_RUN" -eq 1 ]; then
+  echo "Dry run complete — nothing built or uploaded; $PKG $VERSION was NOT published."
+else
+  echo "Done: published $PKG $VERSION to PyPI."
+  echo "Verify at https://pypi.org/project/$PKG/$VERSION/"
+fi

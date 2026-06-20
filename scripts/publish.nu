@@ -111,6 +111,10 @@ def main [
   print $"+ ($py) -m twine upload dist/*"
   if not $dry_run { ^$py -m twine upload ...(glob dist/*) }
 
-  print $"Done: published ($pkg) ($version) to PyPI."
-  print $"Verify at https://pypi.org/project/($pkg)/($version)/"
+  if $dry_run {
+    print $"Dry run complete — nothing built or uploaded; ($pkg) ($version) was NOT published."
+  } else {
+    print $"Done: published ($pkg) ($version) to PyPI."
+    print $"Verify at https://pypi.org/project/($pkg)/($version)/"
+  }
 }
