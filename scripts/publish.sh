@@ -102,10 +102,25 @@ if [ "$ASSUME_YES" -eq 0 ] && [ "$DRY_RUN" -eq 0 ]; then
 fi
 
 # --- Build fresh, then upload -----------------------------------------------
+# This is a pixi project, so build/publish run inside the pixi env (which
+# provides `build` + `twine`). Auto-detected when a pixi.toml + the pixi CLI are
+# present; force with UWL_PY_TOOL=pixi|python.
+if [ "${UWL_PY_TOOL:-}" = "pixi" ]; then USE_PIXI=1
+elif [ "${UWL_PY_TOOL:-}" = "python" ]; then USE_PIXI=0
+elif [ -f pixi.toml ] && command -v pixi >/dev/null 2>&1; then USE_PIXI=1
+else USE_PIXI=0
+fi
+
 run rm -rf dist
-run "$PY" -m build
-run "$PY" -m twine check dist/*
-run "$PY" -m twine upload dist/*
+if [ "$USE_PIXI" -eq 1 ]; then
+  run pixi run python -m build
+  run pixi run python -m twine check dist/*
+  run pixi run python -m twine upload dist/*
+else
+  run "$PY" -m build
+  run "$PY" -m twine check dist/*
+  run "$PY" -m twine upload dist/*
+fi
 
 if [ "$DRY_RUN" -eq 1 ]; then
   echo "Dry run complete — nothing built or uploaded; $PKG $VERSION was NOT published."

@@ -55,13 +55,22 @@ def main [
     print $"tag ($tag) already exists at HEAD — reusing."
   }
 
-  # Verify it builds (fresh sdist + wheel).
+  # Verify it builds (fresh sdist + wheel). This is a pixi project; build inside
+  # the pixi env. Auto-detected when a pixi.toml + the pixi CLI are present;
+  # force with $env.UWL_PY_TOOL = "pixi" | "python".
   if not $no_build {
     print "Verifying build (fresh sdist + wheel)…"
+    let force = ($env.UWL_PY_TOOL? | default "")
+    let use_pixi = (if $force == "pixi" { true } else if $force == "python" { false } else { (("pixi.toml" | path exists) and (which pixi | is-not-empty)) })
     print "+ rm -rf dist"
     if not $dry_run { rm --recursive --force dist }
-    print $"+ ($py) -m build"
-    if not $dry_run { ^$py -m build }
+    if $use_pixi {
+      print "+ pixi run python -m build"
+      if not $dry_run { ^pixi run python -m build }
+    } else {
+      print $"+ ($py) -m build"
+      if not $dry_run { ^$py -m build }
+    }
   }
 
   # Tag.

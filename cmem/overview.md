@@ -150,8 +150,10 @@ Numerics/bool params and returns, and string **params**, are unchanged and remai
 
 - Dev tooling: `pixi run lint` (ruff), `pixi run fmt` (ruff format), `pixi run typecheck`
   (mypy strict), `pixi run test` (pytest).
-- Build: hatchling wheel + sdist (`python -m build`, or `uv build` locally). `pixi.lock` is
-  committed for reproducibility; `.pixi/` and `dist/` are gitignored.
+- Build: hatchling wheel + sdist via `pixi run python -m build`. The packaging tools (`build`,
+  `twine`) live in a **`publish` pixi feature** (`pixi.toml`), included in the default environment —
+  run `pixi install` once to materialize them into the env + `pixi.lock`. `pixi.lock` is committed
+  for reproducibility; `.pixi/` and `dist/` are gitignored.
 
 ### Single source of truth + the three-script toolchain
 
@@ -166,14 +168,17 @@ flags/guards/idempotency). These replace the old `scripts/bump.py` + tag-only `s
    `pyproject.toml` (and the `pixi.toml` mirror) and commits the isolated bump. Guards: clean tree,
    strictly-greater target, no pre-existing tag, valid semver. `--dry-run` / `--no-commit`.
 2. **`scripts/release.{sh,nu}`** — reads the version, verifies a clean tree + a fresh
-   `python -m build`, tags `v<version>`, pushes branch + tag to `origin`, and creates the matching
+   `pixi run python -m build`, tags `v<version>`, pushes branch + tag to `origin`, and creates the matching
    **GitHub Release** via `gh` (skippable). Idempotent (reuses a tag only if it points at HEAD;
    skips an existing Release; degrades gracefully if `gh` is missing/unauthenticated — the tag is
    still pushed). Does **NOT** publish to PyPI. `--dry-run` / `--no-release` / `--no-build` /
    `--remote`.
 3. **`scripts/publish.{sh,nu}`** — the separate, deliberate PyPI step.
-   **Exact publish command:** `python -m build` then `python -m twine check dist/*` then
-   `python -m twine upload dist/*` (interpreter overridable via `$PYTHON`/`$env.PYTHON`).
+   **Exact publish command:** `pixi run python -m build` then `pixi run python -m twine check dist/*`
+   then `pixi run python -m twine upload dist/*` — run inside the pixi env (this is a pixi project).
+   Toolchain is auto-detected (pixi when a `pixi.toml` + the `pixi` CLI are present); force with
+   `UWL_PY_TOOL=pixi|python` (the `python` fallback uses bare `python -m …`, overridable via
+   `$PYTHON`/`$env.PYTHON`).
    **Auth required:** a PyPI API token in the environment — `TWINE_USERNAME=__token__` and
    `TWINE_PASSWORD=pypi-…` (or a `[pypi]` entry in `~/.pypirc`); if absent it prints exactly that
    and exits without uploading. Requires the `v<version>` tag to exist locally **and** on the

@@ -81,10 +81,17 @@ else
 fi
 
 # --- Verify it builds -------------------------------------------------------
+# This is a pixi project; build inside the pixi env. Auto-detected when a
+# pixi.toml + the pixi CLI are present; force with UWL_PY_TOOL=pixi|python.
 if [ "$DO_BUILD" -eq 1 ]; then
   echo "Verifying build (fresh sdist + wheel)…"
+  if [ "${UWL_PY_TOOL:-}" = "pixi" ]; then USE_PIXI=1
+  elif [ "${UWL_PY_TOOL:-}" = "python" ]; then USE_PIXI=0
+  elif [ -f pixi.toml ] && command -v pixi >/dev/null 2>&1; then USE_PIXI=1
+  else USE_PIXI=0
+  fi
   run rm -rf dist
-  run "$PY" -m build
+  if [ "$USE_PIXI" -eq 1 ]; then run pixi run python -m build; else run "$PY" -m build; fi
 fi
 
 # --- Tag, push, release -----------------------------------------------------

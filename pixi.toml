@@ -32,5 +32,11 @@ pytest-asyncio = ">=0.23.0"
 ruff = ">=0.9.0"
 mypy = ">=1.10.0"
 
+# Packaging toolchain — `scripts/release.{sh,nu}` and `scripts/publish.{sh,nu}`
+# run `pixi run python -m build` / `... -m twine ...` inside this env.
+[feature.publish.pypi-dependencies]
+build = ">=1.2.0"
+twine = ">=5.0.0"
+
 [environments]
-default = { features = ["dev"], solve-group = "default" }
+default = { features = ["dev", "publish"], solve-group = "default" }

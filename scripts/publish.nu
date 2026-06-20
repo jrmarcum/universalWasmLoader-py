@@ -101,15 +101,30 @@ def main [
     }
   }
 
-  # Build fresh, then upload.
+  # Build fresh, then upload. This is a pixi project, so build/publish run inside
+  # the pixi env (which provides `build` + `twine`). Auto-detected when a
+  # pixi.toml + the pixi CLI are present; force with $env.UWL_PY_TOOL = "pixi" | "python".
+  let force = ($env.UWL_PY_TOOL? | default "")
+  let use_pixi = (if $force == "pixi" { true } else if $force == "python" { false } else { (("pixi.toml" | path exists) and (which pixi | is-not-empty)) })
+
   print "+ rm -rf dist"
   if not $dry_run { rm --recursive --force dist }
-  print $"+ ($py) -m build"
-  if not $dry_run { ^$py -m build }
-  print $"+ ($py) -m twine check dist/*"
-  if not $dry_run { ^$py -m twine check ...(glob dist/*) }
-  print $"+ ($py) -m twine upload dist/*"
-  if not $dry_run { ^$py -m twine upload ...(glob dist/*) }
+
+  if $use_pixi {
+    print "+ pixi run python -m build"
+    if not $dry_run { ^pixi run python -m build }
+    print "+ pixi run python -m twine check dist/*"
+    if not $dry_run { ^pixi run python -m twine check ...(glob dist/*) }
+    print "+ pixi run python -m twine upload dist/*"
+    if not $dry_run { ^pixi run python -m twine upload ...(glob dist/*) }
+  } else {
+    print $"+ ($py) -m build"
+    if not $dry_run { ^$py -m build }
+    print $"+ ($py) -m twine check dist/*"
+    if not $dry_run { ^$py -m twine check ...(glob dist/*) }
+    print $"+ ($py) -m twine upload dist/*"
+    if not $dry_run { ^$py -m twine upload ...(glob dist/*) }
+  }
 
   if $dry_run {
     print $"Dry run complete — nothing built or uploaded; ($pkg) ($version) was NOT published."
