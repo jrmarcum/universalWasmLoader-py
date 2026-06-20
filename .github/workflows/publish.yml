@@ -1,9 +1,17 @@
 name: Publish
 
+# Manual-only. Publishing to PyPI is a deliberate, decoupled step — it does NOT
+# fire automatically on a tag push. Cut the release first (scripts/release.{sh,nu}
+# tags v<version>, pushes, creates the GitHub Release), then publish either
+# locally (scripts/publish.{sh,nu} → python -m build && twine upload) or by
+# running this workflow by hand against the release tag.
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Release tag to publish (e.g. v1.0.0)"
+        required: true
+        default: ""
 
 jobs:
   publish:
@@ -19,7 +27,7 @@ jobs:
       # publish with a token in a `run:` step instead.
       - name: Checkout
         run: |
-          git clone --depth=1 --branch "${{ github.ref_name }}" \
+          git clone --depth=1 --branch "${{ github.event.inputs.ref }}" \
             "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" .
 
       # ubuntu-latest runners ship Python 3 + pip preinstalled. Install the build
