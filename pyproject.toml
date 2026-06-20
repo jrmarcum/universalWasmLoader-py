@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "universal-wasm-loader"
-version = "0.1.0"
+version = "1.0.0"
 description = "Universal WASM loader for Python"
 readme = "README.md"
 license = { text = "MIT" }
@@ -12,7 +12,7 @@ authors = [{ name = "Jon Marcum", email = "jrmarcum.se@gmail.com" }]
 requires-python = ">=3.11"
 keywords = ["wasm", "webassembly", "loader", "wit", "canonical-abi"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
@@ -37,6 +37,18 @@ Repository = "https://github.com/jrmarcum/universalWasmLoader-py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/universal_wasm_loader"]
+
+# Ship the MIT LICENSE (and the user-facing docs) inside the sdist so the license
+# travels with the published package. Hatchling already auto-includes LICENSE* in
+# the wheel's .dist-info; this makes the sdist contents explicit.
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/universal_wasm_loader",
+    "tests",
+    "LICENSE",
+    "README.md",
+    "pyproject.toml",
+]
 
 [tool.ruff]
 src = ["src"]

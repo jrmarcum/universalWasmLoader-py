@@ -1,6 +1,9 @@
 [project]
 name = "universal-wasm-loader"
-version = "0.1.0"
+# Mirrors pyproject.toml [project] version (the single source of truth that the
+# bump-version / release / publish scripts read & write). Kept in sync by
+# scripts/bump-version.{sh,nu}.
+version = "1.0.0"
 description = "Universal WASM loader for Python"
 channels = ["conda-forge"]
 platforms = ["win-64", "linux-64", "osx-64", "osx-arm64"]
@@ -10,9 +13,11 @@ test = "pytest tests/ -v"
 lint = "ruff check src/ tests/"
 fmt = "ruff format src/ tests/"
 typecheck = "mypy src/"
-# Raise the version in pyproject.toml (patch default; minor/major). Mirrors -js's
-# `deno task bump`. Then `bash scripts/release.sh` tags vX.Y.Z + pushes -> CI publishes.
-bump = "python scripts/bump.py"
+# Versioning / release toolchain lives in scripts/ as paired Bash + Nushell forms
+# (bump-version, release, publish). Run them directly, e.g.
+#   bash scripts/bump-version.sh minor   |   nu scripts/bump-version.nu minor
+#   bash scripts/release.sh              |   nu scripts/release.nu
+#   bash scripts/publish.sh --yes        |   nu scripts/publish.nu --yes
 
 [dependencies]
 python = ">=3.11,<4"
