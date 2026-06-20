@@ -1,10 +1,23 @@
 name: Publish
 
-# Manual-only. Publishing to PyPI is a deliberate, decoupled step — it does NOT
-# fire automatically on a tag push. Cut the release first (scripts/release.{sh,nu}
-# tags v<version>, pushes, creates the GitHub Release), then publish either
-# locally (scripts/publish.{sh,nu} → python -m build && twine upload) or by
-# running this workflow by hand against the release tag.
+# Manual-only, and TOKEN-FREE. Publishing to PyPI is a deliberate, decoupled step
+# that does NOT fire on a tag push — cut the release first (scripts/release.{sh,nu}
+# tags v<version>, pushes, creates the GitHub Release), then run this workflow by
+# hand (Actions tab → Run workflow) against the release tag.
+#
+# Auth is PyPI Trusted Publishing via short-lived OIDC — NO long-lived PyPI token
+# is stored in repo secrets, so there is nothing to leak. Because this org's
+# Actions policy permits only jrmarcum-owned actions (any third-party `uses:`
+# causes a startup_failure), we perform the OIDC exchange by hand in `run:` steps
+# instead of using pypa/gh-action-pypi-publish:
+#   1. ask the runner for an OIDC JWT (audience "pypi"),
+#   2. exchange it at https://pypi.org/_/oidc/mint-token for an ephemeral,
+#      project-scoped PyPI token (valid for minutes),
+#   3. twine upload with that token; it expires on its own, nothing is persisted.
+#
+# One-time PyPI setup: register a Trusted Publisher (or, before the project
+# exists, a "pending publisher") matching this workflow —
+#   Owner: jrmarcum   Repository: universalWasmLoader-py   Workflow: publish.yml
 on:
   workflow_dispatch:
     inputs:
@@ -16,35 +29,34 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # mint the OIDC token for PyPI Trusted Publishing
+      contents: read    # clone the repo at the release tag
 
     steps:
-      # NOTE: This org's Actions policy only permits actions owned by `jrmarcum`.
-      # Third-party actions (actions/checkout, actions/setup-python, AND the usual
-      # pypa/gh-action-pypi-publish) cause a `startup_failure` — the workflow never
-      # runs a single step (yet a local tag/release can still get created). Every
-      # step here MUST therefore be a plain `run:` step. Do NOT reintroduce `uses:`,
-      # and do NOT switch to PyPI Trusted Publishing (which needs the pypa action) —
-      # publish with a token in a `run:` step instead.
+      # NOTE: org policy permits only jrmarcum-owned actions. Any third-party
+      # `uses:` (actions/checkout, actions/setup-python, AND the usual
+      # pypa/gh-action-pypi-publish) causes a `startup_failure` — nothing runs.
+      # Every step here MUST stay a plain `run:` step. Do NOT reintroduce `uses:`.
       - name: Checkout
         run: |
           git clone --depth=1 --branch "${{ github.event.inputs.ref }}" \
             "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" .
 
-      # ubuntu-latest runners ship Python 3 + pip preinstalled. Install the build
-      # frontend, twine, and the runtime/test deps via `run:` (no setup-python action).
+      # ubuntu-latest ships Python 3 + pip. Install the build frontend and twine
+      # via `run:` (no setup-python action).
       - name: Install Python build tooling
         run: |
           python3 --version
           python3 -m pip install --upgrade pip
           python3 -m pip install build twine
 
-      # Run the test suite as a publish gate. The .wat-based fixtures have a known
-      # wasmtime-version harness caveat (cmem/overview.md "Pre-existing harness caveat":
-      # serialize()->Module(bytes) misroutes cwasm to wat2wasm on recent wasmtime), so
-      # we do NOT hard-fail the publish on the full suite. We install the package + dev
-      # extras and run pytest as advisory (the prebuilt-.wasm string conformance tests
-      # are the meaningful gate; they pass). `|| true` keeps a harness-only failure from
-      # blocking a release. Remove `|| true` once the .wat harness is fixed.
+      # Advisory test gate. The .wat-based fixtures have a known wasmtime-version
+      # harness caveat (cmem/overview.md "Pre-existing harness caveat"), so we do
+      # NOT hard-fail the publish on the full suite — the prebuilt-.wasm string
+      # conformance tests are the meaningful gate. `|| true` keeps a harness-only
+      # failure from blocking a release. Remove `|| true` once the .wat harness is
+      # fixed.
       - name: Run tests (advisory gate)
         run: |
           python3 -m pip install -e ".[dev]"
@@ -58,8 +70,27 @@ jobs:
       - name: Check distributions
         run: python3 -m twine check dist/*
 
-      - name: Publish to PyPI
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-        run: python3 -m twine upload dist/*
+      # PyPI Trusted Publishing, done by hand so we need no `uses:` and store no
+      # token. GitHub injects ACTIONS_ID_TOKEN_REQUEST_URL / _TOKEN into the job
+      # because `permissions.id-token: write` is set above.
+      - name: Publish to PyPI (Trusted Publishing via OIDC; no stored token)
+        run: |
+          # 1) Ask the Actions runner for an OIDC token scoped to audience "pypi".
+          resp="$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=pypi")"
+          OIDC_TOKEN="$(printf '%s' "$resp" \
+            | python3 -c 'import sys,json; print(json.load(sys.stdin)["value"])')" \
+            || { echo "::error::could not obtain a GitHub OIDC token: $resp"; exit 1; }
+          echo "::add-mask::$OIDC_TOKEN"
+          export OIDC_TOKEN
+
+          # 2) Exchange it at PyPI for a short-lived, project-scoped API token.
+          payload="$(python3 -c 'import json,os; print(json.dumps({"token": os.environ["OIDC_TOKEN"]}))')"
+          mint="$(curl -sS -X POST https://pypi.org/_/oidc/mint-token -d "$payload")"
+          PYPI_TOKEN="$(printf '%s' "$mint" \
+            | python3 -c 'import sys,json; print(json.load(sys.stdin)["token"])')" \
+            || { echo "::error::PyPI did not mint a token — is the Trusted Publisher registered for this repo/workflow? Response: $mint"; exit 1; }
+          echo "::add-mask::$PYPI_TOKEN"
+
+          # 3) Upload with the ephemeral token. It expires on its own; nothing is stored.
+          TWINE_USERNAME=__token__ TWINE_PASSWORD="$PYPI_TOKEN" python3 -m twine upload dist/*

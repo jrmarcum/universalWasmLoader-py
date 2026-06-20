@@ -75,15 +75,20 @@ that version is already on PyPI it reports success and uploads nothing).
    export TWINE_PASSWORD=pypi-XXXXXXXX     # your token; or a [pypi] entry in ~/.pypirc
    ```
 
-### Publishing from CI instead (optional)
+### Publishing from CI instead (optional, token-free)
 
 `.github/workflows/publish.yml` can also build + upload, but it is **manual-only**
 (`workflow_dispatch`) — it does **not** fire on a tag push, so it never double-publishes
-alongside `release`. Run it from the Actions tab against the release tag; it needs a repo secret
-**`PYPI_API_TOKEN`** (a project-scoped PyPI token).
+alongside `release`. Run it from the Actions tab against the release tag.
+
+It authenticates with **PyPI Trusted Publishing over short-lived OIDC — no long-lived PyPI token
+is stored in repo secrets**, so there's nothing to leak. One-time setup: register a Trusted
+Publisher on PyPI (a *pending publisher* before the project's first upload) with Owner
+`jrmarcum`, Repository `universalWasmLoader-py`, Workflow `publish.yml`.
 
 > **`run:`-only workflow.** This org's GitHub Actions policy permits only `jrmarcum`-owned
 > actions; any third-party `uses:` step (including `actions/checkout` and
 > `pypa/gh-action-pypi-publish`) causes a `startup_failure`. The workflow therefore uses plain
-> `run:` steps throughout (git clone, `pip install build twine`, `twine upload` — no Trusted
-> Publishing).
+> `run:` steps throughout — including the OIDC exchange (`ACTIONS_ID_TOKEN_REQUEST_*` →
+> `https://pypi.org/_/oidc/mint-token` → `twine upload` with the ephemeral token), done by hand
+> rather than via the pypa publish action.

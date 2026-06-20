@@ -181,28 +181,40 @@ flags/guards/idempotency). These replace the old `scripts/bump.py` + tag-only `s
    that version already exists, reports success and uploads nothing. Prompts before the irreversible
    upload (`--yes` to skip). `--dry-run` / `--allow-dirty` / `--skip-tag-check` / `--remote`.
 
-### Publish workflow — `.github/workflows/publish.yml` (`run:`-only, now MANUAL)
+### Publish workflow — `.github/workflows/publish.yml` (`run:`-only, MANUAL, TOKEN-FREE)
 
 - Trigger: **`workflow_dispatch`** with a `ref` input (the release tag). Changed 2026-06-19 from
   `push: tags: v*` so a `release` tag push no longer auto-publishes — publishing stays a single
   deliberate step (local `publish` script, or this workflow run by hand). Avoids double-publishing.
+- **Auth: PyPI Trusted Publishing over short-lived OIDC — NO stored token** (changed 2026-06-19 from
+  a `PYPI_API_TOKEN` repo secret, at the owner's request, "so that we are not hacked"). The job sets
+  `permissions: id-token: write` (+ `contents: read`) and does the OIDC dance **by hand in `run:`
+  steps** (no `pypa/gh-action-pypi-publish`, which the org policy would `startup_failure`):
+  (1) `curl` the runner's `ACTIONS_ID_TOKEN_REQUEST_URL`/`_TOKEN` with `&audience=pypi` → OIDC JWT;
+  (2) POST `{"token": <jwt>}` to `https://pypi.org/_/oidc/mint-token` → ephemeral project-scoped PyPI
+  token (minutes-long); (3) `twine upload` with `TWINE_PASSWORD=<minted token>`. Both tokens are
+  `::add-mask::`ed. Nothing is persisted in secrets.
 - **CRITICAL `run:`-only constraint (unchanged).** The org's Actions policy permits only
-  `jrmarcum`-owned actions. ANY third-party `uses:` — `actions/checkout`, `actions/setup-python`,
-  AND `pypa/gh-action-pypi-publish` — causes `startup_failure`. So every step is a plain `run:`
-  step, and we do **NOT** use PyPI Trusted Publishing (it needs the pypa action). Do not
-  reintroduce `uses:`.
+  `jrmarcum`-owned actions; ANY third-party `uses:` (`actions/checkout`, `actions/setup-python`,
+  `pypa/gh-action-pypi-publish`) causes `startup_failure`. Every step is a plain `run:` step —
+  including the OIDC exchange. Do not reintroduce `uses:`.
 - Steps: checkout via `git clone --depth=1 --branch <input ref> <token-auth url> .`; `pip install
   build twine`; run `pytest` as an **advisory** gate (`|| true`) because the `.wat` fixtures have
-  the known wasmtime harness caveat above; build with `python -m build`; `twine check`; upload with
-  `twine upload` using `TWINE_USERNAME=__token__` / `TWINE_PASSWORD=${{ secrets.PYPI_API_TOKEN }}`.
+  the known wasmtime harness caveat above; build with `python -m build`; `twine check`; then the
+  OIDC mint + `twine upload` step above.
 
 ### Required owner setup (one-time)
 
 1. **PyPI project owned/registered** — the name `universal-wasm-loader` must exist on PyPI under an
    account you control (first upload via `publish`, or pre-register the name).
-2. **A PyPI API token** — for the local `publish` script, export `TWINE_USERNAME=__token__` /
-   `TWINE_PASSWORD=pypi-…` (project-scoped). For the manual CI workflow, add the same token as the
-   GitHub Actions secret **`PYPI_API_TOKEN`** (Settings → Secrets and variables → Actions).
+2. **Auth, two independent paths:**
+   - *Local `publish` script:* export `TWINE_USERNAME=__token__` / `TWINE_PASSWORD=pypi-…`
+     (project-scoped API token; or a `[pypi]` entry in `~/.pypirc`).
+   - *Manual CI workflow:* register a **Trusted Publisher** on PyPI (no stored token) — a *pending
+     publisher* before the project's first upload — matching Owner `jrmarcum`, Repository
+     `universalWasmLoader-py`, Workflow `publish.yml`, Environment *(blank)*. Optional hardening:
+     create a GitHub Environment (e.g. `pypi`) with required reviewers, set `environment: pypi` on
+     the job, and put `pypi` in the publisher's Environment field.
 
 ### Validation done (2026-06-19, no real publish/push)
 
